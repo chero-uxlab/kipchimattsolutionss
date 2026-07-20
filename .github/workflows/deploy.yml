@@ -16,6 +16,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Debug File Structure
+        run: |
+          echo "=== ROOT DIRECTORY ==="
+          ls -la
+          echo "=== SRC DIRECTORY ==="
+          ls -la src || echo "src directory is missing!"
+          echo "=== SRC/COMPONENTS DIRECTORY ==="
+          ls -la src/components || echo "src/components directory is missing!"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
