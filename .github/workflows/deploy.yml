@@ -18,7 +18,24 @@ jobs:
 
       - name: Debug File Structure
         run: |
-          echo "=== ROOT DIRECTORY ==="
+          echo "=== ROOT DIRECTORY BEFORE AUTO-FIX ==="
+          ls -la
+          
+          # Auto-fix folder casing for Linux compatibility (case-insensitive to case-sensitive fallback)
+          if [ -d "Src" ]; then
+            echo "Detected capital 'Src' directory. Renaming to 'src'..."
+            mv Src src
+          elif [ -d "SRC" ]; then
+            echo "Detected capital 'SRC' directory. Renaming to 'src'..."
+            mv SRC src
+          fi
+          
+          if [ -f "src/Main.tsx" ]; then
+            echo "Detected capital 'Main.tsx' file. Renaming to 'main.tsx'..."
+            mv src/Main.tsx src/main.tsx
+          fi
+
+          echo "=== ROOT DIRECTORY AFTER AUTO-FIX ==="
           ls -la
           echo "=== SRC DIRECTORY ==="
           ls -la src || echo "src directory is missing!"
