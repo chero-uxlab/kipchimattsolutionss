@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Phone, Mail, MapPin, Heart, ShoppingBag, Send, CreditCard, Laptop,
   ArrowUp, Globe, Eye, Settings, Wifi, WifiOff, AlertTriangle, Sparkles, X, Check, EyeOff
 } from 'lucide-react';
-import { Product, Order, StoreSettings, CartItem, Customer } from './types';
+import { Product, Order, StoreSettings, CartItem, Customer, AdminUser } from './types';
 import { 
   defaultProducts, defaultSettings, formatMoney, uid 
 } from './data/catalog';
@@ -56,16 +56,38 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // --- Session & Router States ---
-  const [currentView, setCurrentView] = useState<'shop' | 'admin' | 'cart'>('shop');
+  // --- Path-based Routing State & Navigation Helpers ---
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  const navigate = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Derive currentView from currentPath for pristine compatibility with existing components
+  const currentView = currentPath.startsWith('/admin') ? 'admin' : (currentPath === '/cart' ? 'cart' : 'shop');
+
   const [deliveryLocation, setDeliveryLocation] = useState<string>(() => {
     return localStorage.getItem('kipchimatt_delivery_county') || 'Nairobi';
   });
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeSearch, setActiveSearch] = useState<string>('');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return sessionStorage.getItem('kipchimatt_admin') === '1';
+  const [loggedInUser, setLoggedInUser] = useState<AdminUser | null>(() => {
+    const saved = sessionStorage.getItem('kipchimatt_admin_user');
+    return saved ? JSON.parse(saved) : null;
   });
+  const isLoggedIn = !!loggedInUser;
 
   // --- Drawers & Modals Toggles ---
   const [cartOpen, setCartOpen] = useState(false);
@@ -298,6 +320,11 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const lastSyncProductsRef = useRef<string>("");
+  const lastSyncOrdersRef = useRef<string>("");
+  const lastSyncSettingsRef = useRef<string>("");
+  const lastSyncAlertsRef = useRef<string>("");
+
   const [isInitialLoaded, setIsInitialLoaded] = useState(false);
 
   // Load initial datasets from our separate Express API backend on mount
@@ -313,19 +340,25 @@ export default function App() {
         
         if (pRes.ok) {
           const pData = await pRes.json();
-          if (pData && pData.length > 0) setProducts(pData);
+          if (pData && pData.length > 0) {
+            setProducts(pData);
+            lastSyncProductsRef.current = JSON.stringify(pData);
+          }
         }
         if (oRes.ok) {
           const oData = await oRes.json();
           setOrders(oData);
+          lastSyncOrdersRef.current = JSON.stringify(oData);
         }
         if (sRes.ok) {
           const sData = await sRes.json();
           setSettings(sData);
+          lastSyncSettingsRef.current = JSON.stringify(sData);
         }
         if (aRes.ok) {
           const aData = await aRes.json();
           setAdminAlerts(aData);
+          lastSyncAlertsRef.current = JSON.stringify(aData);
         }
       } catch (err) {
         console.error("Error loading backend data:", err);
@@ -337,14 +370,71 @@ export default function App() {
     loadInitialData();
   }, []);
 
+  // Poll server to stay in sync with administrative backend changes
+  useEffect(() => {
+    if (!isInitialLoaded) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const [pRes, oRes, sRes, aRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/orders'),
+          fetch('/api/settings'),
+          fetch('/api/admin-alerts')
+        ]);
+
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          const pStr = JSON.stringify(pData);
+          if (pStr !== JSON.stringify(products)) {
+            setProducts(pData);
+            lastSyncProductsRef.current = pStr;
+          }
+        }
+        if (oRes.ok) {
+          const oData = await oRes.json();
+          const oStr = JSON.stringify(oData);
+          if (oStr !== JSON.stringify(orders)) {
+            setOrders(oData);
+            lastSyncOrdersRef.current = oStr;
+          }
+        }
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          const sStr = JSON.stringify(sData);
+          if (sStr !== JSON.stringify(settings)) {
+            setSettings(sData);
+            lastSyncSettingsRef.current = sStr;
+          }
+        }
+        if (aRes.ok) {
+          const aData = await aRes.json();
+          const aStr = JSON.stringify(aData);
+          if (aStr !== JSON.stringify(adminAlerts)) {
+            setAdminAlerts(aData);
+            lastSyncAlertsRef.current = aStr;
+          }
+        }
+      } catch (err) {
+        console.warn("Polling communication sync error:", err);
+      }
+    }, 4000); // Poll every 4 seconds to ensure high responsiveness
+
+    return () => clearInterval(interval);
+  }, [isInitialLoaded, products, orders, settings, adminAlerts]);
+
   useEffect(() => {
     localStorage.setItem('kipchimatt_admin_alerts', JSON.stringify(adminAlerts));
     if (isInitialLoaded) {
-      fetch('/api/admin-alerts/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(adminAlerts)
-      }).catch(err => console.error("Failed to sync admin alerts to backend:", err));
+      const currentStr = JSON.stringify(adminAlerts);
+      if (currentStr !== lastSyncAlertsRef.current) {
+        lastSyncAlertsRef.current = currentStr;
+        fetch('/api/admin-alerts/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: currentStr
+        }).catch(err => console.error("Failed to sync admin alerts to backend:", err));
+      }
     }
   }, [adminAlerts, isInitialLoaded]);
 
@@ -376,33 +466,45 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('kipchimatt_products', JSON.stringify(products));
     if (isInitialLoaded) {
-      fetch('/api/products/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(products)
-      }).catch(err => console.error("Failed to sync products to backend:", err));
+      const currentStr = JSON.stringify(products);
+      if (currentStr !== lastSyncProductsRef.current) {
+        lastSyncProductsRef.current = currentStr;
+        fetch('/api/products/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: currentStr
+        }).catch(err => console.error("Failed to sync products to backend:", err));
+      }
     }
   }, [products, isInitialLoaded]);
 
   useEffect(() => {
     localStorage.setItem('kipchimatt_orders', JSON.stringify(orders));
     if (isInitialLoaded) {
-      fetch('/api/orders/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orders)
-      }).catch(err => console.error("Failed to sync orders to backend:", err));
+      const currentStr = JSON.stringify(orders);
+      if (currentStr !== lastSyncOrdersRef.current) {
+        lastSyncOrdersRef.current = currentStr;
+        fetch('/api/orders/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: currentStr
+        }).catch(err => console.error("Failed to sync orders to backend:", err));
+      }
     }
   }, [orders, isInitialLoaded]);
 
   useEffect(() => {
     localStorage.setItem('kipchimatt_settings', JSON.stringify(settings));
     if (isInitialLoaded) {
-      fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      }).catch(err => console.error("Failed to sync settings to backend:", err));
+      const currentStr = JSON.stringify(settings);
+      if (currentStr !== lastSyncSettingsRef.current) {
+        lastSyncSettingsRef.current = currentStr;
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: currentStr
+        }).catch(err => console.error("Failed to sync settings to backend:", err));
+      }
     }
   }, [settings, isInitialLoaded]);
 
@@ -701,6 +803,51 @@ export default function App() {
     setNewsletterEmail('');
   };
 
+  if (currentView === 'admin') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col antialiased">
+        <AdminPortal 
+          products={products}
+          orders={orders}
+          settings={settings}
+          onProductsChange={setProducts}
+          onOrdersChange={setOrders}
+          onSettingsChange={setSettings}
+          isLoggedIn={isLoggedIn}
+          loggedInUser={loggedInUser}
+          onLogin={(user) => {
+            sessionStorage.setItem('kipchimatt_admin_user', JSON.stringify(user));
+            setLoggedInUser(user);
+          }}
+          onLogout={() => {
+            sessionStorage.removeItem('kipchimatt_admin_user');
+            setLoggedInUser(null);
+            handleDeliveryLocationChange('Nairobi');
+            navigate('/');
+          }}
+          onBackToShop={() => {
+            navigate('/');
+          }}
+          onShowToast={showToast}
+          adminAlerts={adminAlerts}
+          onTriggerLowStockEmail={handleTriggerLowStockEmail}
+        />
+
+        {/* Floating dynamic status toast message notifications stack */}
+        <div className="fixed bottom-6 right-6 z-[999] flex flex-col gap-2 pointer-events-none select-none">
+          {toasts.map((toast) => (
+            <div 
+              key={toast.id}
+              className={`p-4 rounded-xl shadow-xl text-white font-bold text-xs flex items-center gap-2 max-w-sm pointer-events-auto animate-toast-in ${toast.type === 'success' ? 'bg-green' : toast.type === 'error' ? 'bg-red' : 'bg-gray-800'}`}
+            >
+              <span>{toast.msg}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col antialiased">
       
@@ -732,14 +879,14 @@ export default function App() {
         settings={settings}
         currentView={currentView}
         onViewChange={(view) => {
-          setCurrentView(view);
+          navigate(view === 'admin' ? '/admin' : (view === 'cart' ? '/cart' : '/'));
           setActiveCategory('all');
           setActiveSearch('');
         }}
         onSearch={setActiveSearch}
         onCategorySelect={handleCategorySelect}
         onToggleCart={() => {
-          setCurrentView(currentView === 'cart' ? 'shop' : 'cart');
+          navigate(currentView === 'cart' ? '/' : '/cart');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onToggleWishlist={() => setWishlistOpen(prev => !prev)}
@@ -749,9 +896,9 @@ export default function App() {
         onDeliveryLocationChange={handleDeliveryLocationChange}
         isLoggedIn={isLoggedIn}
         onLogout={() => {
-          setIsLoggedIn(false);
-          sessionStorage.removeItem('kipchimatt_admin');
-          setCurrentView('shop');
+          sessionStorage.removeItem('kipchimatt_admin_user');
+          setLoggedInUser(null);
+          navigate('/');
           showToast('Administrative session signed out.', 'info');
         }}
         isDark={isDark}
@@ -891,7 +1038,7 @@ export default function App() {
                     <a href="#" className="hover:text-white transition-colors">Our Kenyan Partners</a>
                     <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
                     <button 
-                      onClick={() => setCurrentView('admin')}
+                      onClick={() => navigate('/admin')}
                       className="w-fit bg-plum-dark/50 hover:bg-plum-dark/70 border border-white/10 text-white font-bold py-1.5 px-4 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <Laptop className="w-3.5 h-3.5 text-pink-200" />
@@ -923,7 +1070,7 @@ export default function App() {
           </footer>
 
         </div>
-      ) : currentView === 'cart' ? (
+      ) : (
         <CartPage 
           cart={cart}
           settings={settings}
@@ -933,34 +1080,9 @@ export default function App() {
           onDeliveryLocationChange={handleDeliveryLocationChange}
           onPlaceOrder={handlePlaceOrder}
           onBackToShop={() => {
-            setCurrentView('shop');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            navigate('/');
           }}
           orders={orders}
-        />
-      ) : (
-        /* Back-Office Operational Console Dashboard */
-        <AdminPortal 
-          products={products}
-          orders={orders}
-          settings={settings}
-          onProductsChange={setProducts}
-          onOrdersChange={setOrders}
-          onSettingsChange={setSettings}
-          isLoggedIn={isLoggedIn}
-          onLogin={() => {
-            sessionStorage.setItem('kipchimatt_admin', '1');
-            setIsLoggedIn(true);
-          }}
-          onLogout={() => {
-            sessionStorage.removeItem('kipchimatt_admin');
-            setIsLoggedIn(false);
-            handleDeliveryLocationChange('Nairobi');
-            setCurrentView('shop');
-          }}
-          onShowToast={showToast}
-          adminAlerts={adminAlerts}
-          onTriggerLowStockEmail={handleTriggerLowStockEmail}
         />
       )}
 
@@ -976,7 +1098,7 @@ export default function App() {
         onRemoveItem={handleRemoveCartItem}
         onCheckout={() => {
           setCartOpen(false);
-          setCurrentView('cart');
+          navigate('/cart');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />

@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 
 // Seed default datasets from source code
 import { defaultProducts, defaultSettings } from "./src/data/catalog";
-import { Product, Order, StoreSettings } from "./src/types";
+import { Product, Order, StoreSettings, AdminUser } from "./src/types";
 
 async function startServer() {
   const app = express();
@@ -24,6 +24,7 @@ async function startServer() {
   const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
   const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
   const ALERTS_FILE = path.join(DATA_DIR, "admin-alerts.json");
+  const ADMIN_USERS_FILE = path.join(DATA_DIR, "admin-users.json");
 
   // Helper read/write utility
   function readData<T>(filePath: string, defaultVal: T): T {
@@ -48,11 +49,39 @@ async function startServer() {
     }
   }
 
+  const defaultAdminUsers: AdminUser[] = [
+    {
+      id: "u-1",
+      name: "Super Administrator",
+      email: "superadmin@kipchimatt.co.ke",
+      password: "superadmin123",
+      role: "superadmin",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "u-2",
+      name: "Catalog Editor",
+      email: "editor@kipchimatt.co.ke",
+      password: "editor123",
+      role: "editor",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "u-3",
+      name: "Auditor",
+      email: "viewer@kipchimatt.co.ke",
+      password: "viewer123",
+      role: "viewer",
+      createdAt: new Date().toISOString()
+    }
+  ];
+
   // Load and seed states dynamically
   let products: Product[] = readData(PRODUCTS_FILE, defaultProducts);
   let orders: Order[] = readData(ORDERS_FILE, []);
   let settings: StoreSettings = readData(SETTINGS_FILE, defaultSettings);
   let adminAlerts: any[] = readData(ALERTS_FILE, []);
+  let adminUsers: AdminUser[] = readData(ADMIN_USERS_FILE, defaultAdminUsers);
 
   // --- API ROUTE ENDPOINTS ---
 
@@ -267,6 +296,132 @@ async function startServer() {
     } catch (e) {
       console.error("Failed to log low stock alert:", e);
       res.status(500).json({ error: "Failed to log alert" });
+    }
+  });
+
+  // --- ADMIN USERS & SESSIONS API ENDPOINTS ---
+
+  // ADMIN LOGIN (by Email)
+  app.post("/api/admin/login", (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+      const user = adminUsers.find(
+        u => u.email.toLowerCase() === email.toLowerCase().trim() && u.password === password
+      );
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      // Return user without password
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e) {
+      console.error("Admin login error:", e);
+      res.status(500).json({ error: "Internal server error during login" });
+    }
+  });
+
+  // GET ALL ADMIN USERS
+  app.get("/api/admin/users", (req, res) => {
+    try {
+      // Return users (with passwords hidden/masked or safe)
+      const safeUsers = adminUsers.map(({ password, ...rest }) => ({
+        ...rest,
+        password: password ? "••••••••" : undefined
+      }));
+      res.json(safeUsers);
+    } catch (e) {
+      console.error("Failed to fetch admin users:", e);
+      res.status(500).json({ error: "Failed to fetch admin users" });
+    }
+  });
+
+  // CREATE ADMIN USER
+  app.post("/api/admin/users", (req, res) => {
+    try {
+      const payload = req.body;
+      if (!payload.email || !payload.password || !payload.name || !payload.role) {
+        return res.status(400).json({ error: "Missing required admin user fields" });
+      }
+
+      // Check if email already exists
+      const exists = adminUsers.some(u => u.email.toLowerCase() === payload.email.toLowerCase().trim());
+      if (exists) {
+        return res.status(400).json({ error: "An administrator with this email already exists" });
+      }
+
+      const newUser: AdminUser = {
+        id: "u-" + Math.random().toString(36).substr(2, 9),
+        name: payload.name.trim(),
+        email: payload.email.toLowerCase().trim(),
+        password: payload.password,
+        role: payload.role,
+        createdAt: new Date().toISOString()
+      };
+
+      adminUsers.push(newUser);
+      writeData(ADMIN_USERS_FILE, adminUsers);
+
+      const { password: _, ...safeUser } = newUser;
+      res.json(safeUser);
+    } catch (e) {
+      console.error("Failed to create admin user:", e);
+      res.status(500).json({ error: "Failed to create admin user" });
+    }
+  });
+
+  // UPDATE ADMIN USER
+  app.put("/api/admin/users/:id", (req, res) => {
+    try {
+      const id = req.params.id;
+      const idx = adminUsers.findIndex(u => u.id === id);
+      if (idx === -1) {
+        return res.status(404).json({ error: "Admin user not found" });
+      }
+
+      const payload = req.body;
+      if (payload.email) {
+        const otherExists = adminUsers.some(
+          u => u.id !== id && u.email.toLowerCase() === payload.email.toLowerCase().trim()
+        );
+        if (otherExists) {
+          return res.status(400).json({ error: "An administrator with this email already exists" });
+        }
+        adminUsers[idx].email = payload.email.toLowerCase().trim();
+      }
+
+      if (payload.name) adminUsers[idx].name = payload.name.trim();
+      if (payload.role) adminUsers[idx].role = payload.role;
+      if (payload.password && payload.password !== "••••••••") {
+        adminUsers[idx].password = payload.password;
+      }
+
+      writeData(ADMIN_USERS_FILE, adminUsers);
+
+      const { password: _, ...safeUser } = adminUsers[idx];
+      res.json(safeUser);
+    } catch (e) {
+      console.error("Failed to update admin user:", e);
+      res.status(500).json({ error: "Failed to update admin user" });
+    }
+  });
+
+  // DELETE ADMIN USER
+  app.delete("/api/admin/users/:id", (req, res) => {
+    try {
+      const id = req.params.id;
+      if (id === "u-1") {
+        return res.status(400).json({ error: "Cannot delete the primary system superadmin" });
+      }
+
+      adminUsers = adminUsers.filter(u => u.id !== id);
+      writeData(ADMIN_USERS_FILE, adminUsers);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Failed to delete admin user:", e);
+      res.status(500).json({ error: "Failed to delete admin user" });
     }
   });
 
