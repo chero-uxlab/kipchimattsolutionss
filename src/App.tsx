@@ -32,28 +32,53 @@ interface ToastMsg {
 export default function App() {
   // --- Persistent States from LocalStorage ---
   const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('kipchimatt_products');
-    return saved ? JSON.parse(saved) : defaultProducts;
+    try {
+      const saved = localStorage.getItem('kipchimatt_products');
+      return saved ? JSON.parse(saved) : defaultProducts;
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_products:", e);
+      return defaultProducts;
+    }
   });
 
   const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('kipchimatt_orders');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kipchimatt_orders');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_orders:", e);
+      return [];
+    }
   });
 
   const [settings, setSettings] = useState<StoreSettings>(() => {
-    const saved = localStorage.getItem('kipchimatt_settings');
-    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+    try {
+      const saved = localStorage.getItem('kipchimatt_settings');
+      return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_settings:", e);
+      return defaultSettings;
+    }
   });
 
   const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('kipchimatt_cart');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kipchimatt_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_cart:", e);
+      return [];
+    }
   });
 
   const [wishlist, setWishlist] = useState<number[]>(() => {
-    const saved = localStorage.getItem('kipchimatt_wishlist');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kipchimatt_wishlist');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_wishlist:", e);
+      return [];
+    }
   });
 
   // --- Adaptive Path & Hash-based Routing State & Navigation Helpers ---
@@ -98,8 +123,13 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeSearch, setActiveSearch] = useState<string>('');
   const [loggedInUser, setLoggedInUser] = useState<AdminUser | null>(() => {
-    const saved = sessionStorage.getItem('kipchimatt_admin_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = sessionStorage.getItem('kipchimatt_admin_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_admin_user:", e);
+      return null;
+    }
   });
   const isLoggedIn = !!loggedInUser;
 
@@ -318,8 +348,13 @@ export default function App() {
 
   // --- Current Customer (for Loyalty points) ---
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(() => {
-    const saved = localStorage.getItem('kipchimatt_current_customer');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('kipchimatt_current_customer');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_current_customer:", e);
+      return null;
+    }
   });
 
   // --- Admin Low Stock Alerts Log ---
@@ -330,8 +365,13 @@ export default function App() {
     timestamp: string;
     sentTo: string;
   }>>(() => {
-    const saved = localStorage.getItem('kipchimatt_admin_alerts');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kipchimatt_admin_alerts');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn("Failed to parse kipchimatt_admin_alerts:", e);
+      return [];
+    }
   });
 
   const lastSyncProductsRef = useRef<string>("");
