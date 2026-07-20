@@ -56,27 +56,41 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // --- Path-based Routing State & Navigation Helpers ---
-  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  // --- Adaptive Path & Hash-based Routing State & Navigation Helpers ---
+  const [currentPath, setCurrentPath] = useState(() => {
+    return window.location.pathname + window.location.hash;
+  });
 
   useEffect(() => {
     const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
+      setCurrentPath(window.location.pathname + window.location.hash);
     };
     window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
     return () => {
       window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
     };
   }, []);
 
   const navigate = (path: string) => {
-    window.history.pushState({}, '', path);
-    setCurrentPath(path);
+    // If hosted on GitHub Pages or any subdirectory path, fallback to hash routing to prevent breaking base path or causing 404s
+    const hasSubdirectory = window.location.pathname !== '/' && !window.location.pathname.startsWith('/admin') && !window.location.pathname.startsWith('/cart');
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    
+    if (hasSubdirectory || isGitHubPages) {
+      window.location.hash = path;
+    } else {
+      window.history.pushState({}, '', path);
+      setCurrentPath(path + window.location.hash);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Derive currentView from currentPath for pristine compatibility with existing components
-  const currentView = currentPath.startsWith('/admin') ? 'admin' : (currentPath === '/cart' ? 'cart' : 'shop');
+  // Derive currentView adaptively from pathname and hash to prevent blank screens in nested/subdirectory states
+  const currentView = (currentPath.includes('admin') || window.location.hash.includes('admin')) 
+    ? 'admin' 
+    : ((currentPath.includes('cart') || window.location.hash.includes('cart')) ? 'cart' : 'shop');
 
   const [deliveryLocation, setDeliveryLocation] = useState<string>(() => {
     return localStorage.getItem('kipchimatt_delivery_county') || 'Nairobi';
