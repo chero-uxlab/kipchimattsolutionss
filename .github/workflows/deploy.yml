@@ -16,23 +16,31 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Debug File Structure
+      - name: Debug and Fix File Casing
         run: |
           echo "=== ROOT DIRECTORY BEFORE AUTO-FIX ==="
           ls -la
           
-          # Auto-fix folder casing for Linux compatibility (case-insensitive to case-sensitive fallback)
-          if [ -d "Src" ]; then
-            echo "Detected capital 'Src' directory. Renaming to 'src'..."
-            mv Src src
-          elif [ -d "SRC" ]; then
-            echo "Detected capital 'SRC' directory. Renaming to 'src'..."
-            mv SRC src
+          # Find directory with case-insensitive name 'src'
+          ACTUAL_SRC=$(find . -maxdepth 1 -iname "src" -type d | head -n 1)
+          if [ ! -z "$ACTUAL_SRC" ] && [ "$ACTUAL_SRC" != "./src" ]; then
+            echo "Found directory with incorrect casing: $ACTUAL_SRC. Renaming to ./src..."
+            mv "$ACTUAL_SRC" ./src_temp
+            mv ./src_temp ./src
           fi
           
-          if [ -f "src/Main.tsx" ]; then
-            echo "Detected capital 'Main.tsx' file. Renaming to 'main.tsx'..."
-            mv src/Main.tsx src/main.tsx
+          # Make sure 'src' folder exists
+          if [ -d "src" ]; then
+            # Find any main.tsx file (case-insensitive) inside src
+            ACTUAL_MAIN=$(find src -maxdepth 1 -iname "main.tsx" -type f | head -n 1)
+            if [ ! -z "$ACTUAL_MAIN" ] && [ "$ACTUAL_MAIN" != "src/main.tsx" ]; then
+              echo "Found main.tsx file with incorrect casing: $ACTUAL_MAIN. Renaming to src/main.tsx..."
+              mv "$ACTUAL_MAIN" src/main.tsx_temp
+              mv src/main.tsx_temp src/main.tsx
+            fi
+          else
+            echo "Error: src directory does not exist!"
+            exit 1
           fi
 
           echo "=== ROOT DIRECTORY AFTER AUTO-FIX ==="
