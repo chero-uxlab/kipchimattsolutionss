@@ -16,45 +16,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Debug and Fix File Casing
-        run: |
-          echo "=== ROOT DIRECTORY BEFORE AUTO-FIX ==="
-          ls -la
-          
-          # Find directory with case-insensitive name 'src'
-          ACTUAL_SRC=$(find . -maxdepth 1 -iname "src" -type d | head -n 1)
-          if [ ! -z "$ACTUAL_SRC" ] && [ "$ACTUAL_SRC" != "./src" ]; then
-            echo "Found directory with incorrect casing: $ACTUAL_SRC. Renaming to ./src..."
-            mv "$ACTUAL_SRC" ./src_temp
-            mv ./src_temp ./src
-          fi
-          
-          # Make sure 'src' folder exists
-          if [ -d "src" ]; then
-            # Find any main.tsx file (case-insensitive) inside src
-            ACTUAL_MAIN=$(find src -maxdepth 1 -iname "main.tsx" -type f | head -n 1)
-            if [ ! -z "$ACTUAL_MAIN" ] && [ "$ACTUAL_MAIN" != "src/main.tsx" ]; then
-              echo "Found main.tsx file with incorrect casing: $ACTUAL_MAIN. Renaming to src/main.tsx..."
-              mv "$ACTUAL_MAIN" src/main.tsx_temp
-              mv src/main.tsx_temp src/main.tsx
-            fi
-          else
-            echo "Error: src directory does not exist!"
-            exit 1
-          fi
-
-          echo "=== ROOT DIRECTORY AFTER AUTO-FIX ==="
-          ls -la
-          echo "=== SRC DIRECTORY ==="
-          ls -la src || echo "src directory is missing!"
-          echo "=== SRC/COMPONENTS DIRECTORY ==="
-          ls -la src/components || echo "src/components directory is missing!"
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
+
+      - name: Fix File Casing for Linux compatibility
+        run: node fix-casing.js
 
       - name: Install Dependencies
         run: npm ci || npm install
