@@ -34,7 +34,7 @@ jobs:
           cache: 'npm'
 
       - name: Fix File Casing for Linux compatibility
-        run: node fix-casing.js
+        run: node fix-casing.cjs
 
       - name: Install Dependencies
         run: npm ci || npm install
